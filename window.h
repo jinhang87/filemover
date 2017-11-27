@@ -76,6 +76,7 @@ private slots:
     void animateFindClick();
     void openFileOfItem(int row, int column);
     void contextMenu(const QPoint &pos);
+    void findList();
 
 private:
     QStringList findFiles(const QStringList &files, const QString &text);

@@ -49,7 +49,8 @@
 ****************************************************************************/
 
 #include <QtWidgets>
-
+#include <QDebug>
+#include <QFile>
 #include "window.h"
 
 //! [17]
@@ -77,7 +78,7 @@ Window::Window(QWidget *parent)
     QPushButton *browseButton = new QPushButton(tr("&Browse..."), this);
     connect(browseButton, &QAbstractButton::clicked, this, &Window::browse);
     findButton = new QPushButton(tr("&Find"), this);
-    connect(findButton, &QAbstractButton::clicked, this, &Window::find);
+    connect(findButton, &QAbstractButton::clicked, this, &Window::findList);
 
     fileComboBox = createComboBox(tr("*"));
     connect(fileComboBox->lineEdit(), &QLineEdit::returnPressed,
@@ -170,6 +171,40 @@ void Window::find()
         files = findFiles(files, text);
     showFiles(files);
 }
+
+void Window::findList()
+{
+    QString path = QDir::cleanPath(directoryComboBox->currentText());
+    currentDir = QDir(path);
+
+    QFile file("data1.txt");
+    if(!file.open(QFile::ReadOnly | QIODevice::Text)){
+        return;
+    }
+    QTextStream in(&file);
+    while(!in.atEnd()){
+        QString line = in.readLine();
+        qDebug() << line;
+        QStringList lineGroup = line.split("\t");
+        qDebug() << lineGroup[0] << lineGroup[6];
+
+        //创建文件夹
+
+
+
+
+        if(1){
+            //QString fileName = QString(u8"*鲁*");
+            QString fileName = QString(u8"*%1*").arg(lineGroup[0]);
+            QStringList files;
+            findRecursion(path, fileName.isEmpty() ? QStringLiteral("*") : fileName, &files);
+            qDebug() << fileName << files;
+        }
+
+    }
+    file.close();
+}
+
 //! [4]
 
 void Window::animateFindClick()
@@ -319,4 +354,6 @@ void Window::contextMenu(const QPoint &pos)
         QGuiApplication::clipboard()->setText(QDir::toNativeSeparators(fileName));
 #endif
 }
+
+
 //! [16]
