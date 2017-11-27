@@ -51,8 +51,10 @@
 #ifndef WINDOW_H
 #define WINDOW_H
 
+#include "findworker.h"
 #include <QWidget>
 #include <QDir>
+#include <QThread>
 
 QT_BEGIN_NAMESPACE
 class QComboBox;
@@ -69,6 +71,11 @@ class Window : public QWidget
 
 public:
     Window(QWidget *parent = 0);
+    ~Window();
+
+signals:
+    void findWork(const QString &path);
+    void cancel();
 
 private slots:
     void browse();
@@ -90,8 +97,11 @@ private:
     QLabel *filesFoundLabel;
     QPushButton *findButton;
     QTableWidget *filesTable;
-
+    QPushButton *cancelButton;
     QDir currentDir;
+
+    QThread* thread;
+    FindWorker* worker;
 };
 //! [0]
 

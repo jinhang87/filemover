@@ -48,6 +48,7 @@
 **
 ****************************************************************************/
 
+
 #include <QtWidgets>
 #include <QDebug>
 #include <QFile>
@@ -80,11 +81,14 @@ Window::Window(QWidget *parent)
     connect(browseButton, &QAbstractButton::clicked, this, &Window::browse);
     findButton = new QPushButton(tr("&Find"), this);
     connect(findButton, &QAbstractButton::clicked, this, &Window::findList);
+    cancelButton = new QPushButton(tr("&cancel"), this);
+    cancelButton->setEnabled(false);
 
     fileComboBox = createComboBox(tr("*"));
     connect(fileComboBox->lineEdit(), &QLineEdit::returnPressed,
             this, &Window::animateFindClick);
     textComboBox = createComboBox();
+    textComboBox->setEnabled(false);
     connect(textComboBox->lineEdit(), &QLineEdit::returnPressed,
             this, &Window::animateFindClick);
     directoryComboBox = createComboBox(QDir::toNativeSeparators(QDir::currentPath()));
@@ -94,9 +98,9 @@ Window::Window(QWidget *parent)
     filesFoundLabel = new QLabel;
 
     createFilesTable();
-//! [0]
+    //! [0]
 
-//! [1]
+    //! [1]
     QGridLayout *mainLayout = new QGridLayout(this);
     mainLayout->addWidget(new QLabel(tr("Named:")), 0, 0);
     mainLayout->addWidget(fileComboBox, 0, 1, 1, 2);
@@ -106,12 +110,58 @@ Window::Window(QWidget *parent)
     mainLayout->addWidget(directoryComboBox, 2, 1);
     mainLayout->addWidget(browseButton, 2, 2);
     mainLayout->addWidget(filesTable, 3, 0, 1, 3);
-    mainLayout->addWidget(filesFoundLabel, 4, 0, 1, 2);
-    mainLayout->addWidget(findButton, 4, 2);
+    mainLayout->addWidget(filesFoundLabel, 4, 1, 1, 1);
+    mainLayout->addWidget(findButton, 4, 0);
+    mainLayout->addWidget(cancelButton, 4, 2);
 
     setWindowTitle(tr("Find Files"));
     const QRect screenGeometry = QApplication::desktop()->screenGeometry(this);
     resize(screenGeometry.width() / 2, screenGeometry.height() / 3);
+
+    worker = new FindWorker;
+    thread = new QThread;
+    //线程和具体任务操作绑定
+    worker->moveToThread(thread);
+    //线程结束信号绑定
+    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+    //线程控制信号绑定
+    connect(this, &Window::findWork, worker, &FindWorker::onFindWork);
+    connect(this, &Window::cancel, worker, &FindWorker::cancel);
+    connect(worker, &FindWorker::totalChanged, this , [=](int total){
+        filesFoundLabel->setText(QString("复制 %1 个文件!").arg(total));
+        filesFoundLabel->setWordWrap(true);
+        findButton->setEnabled(true);
+        cancelButton->setEnabled(false);
+    });
+    connect(worker, &FindWorker::totalNone, this, [=](){
+        filesFoundLabel->setText(QString("找不到目标文件"));
+        findButton->setEnabled(true);
+        cancelButton->setEnabled(false);
+    });
+    connect(worker, &FindWorker::fileNotFind, this, [=](){
+        filesFoundLabel->setText(QString("找不到配置文件"));
+        findButton->setEnabled(true);
+        cancelButton->setEnabled(false);
+    });
+    connect(worker, &FindWorker::plateChanged, this , [=](const QString &text){
+        fileComboBox->lineEdit()->setText(text);
+    });
+    connect(cancelButton, &QAbstractButton::clicked, this, [=](){
+        qDebug() << "cancel!";
+        //QMetaObject::invokeMethod(worker, "cancel");
+        //emit cancel();
+        worker->cancel();
+    });
+
+    thread->start();
+    qDebug() << "MainWindow threadid : " << QThread::currentThreadId();
+}
+
+Window::~Window()
+{
+    thread->quit();
+    thread->wait();
+    delete thread; //emit QThread::finished
 }
 //! [1]
 
@@ -119,7 +169,7 @@ Window::Window(QWidget *parent)
 void Window::browse()
 {
     QString directory =
-        QDir::toNativeSeparators(QFileDialog::getExistingDirectory(this, tr("Find Files"), QDir::currentPath()));
+            QDir::toNativeSeparators(QFileDialog::getExistingDirectory(this, tr("Find Files"), QDir::currentPath()));
 
     if (!directory.isEmpty()) {
         if (directoryComboBox->findText(directory) == -1)
@@ -157,13 +207,13 @@ void Window::find()
     QString fileName = fileComboBox->currentText();
     QString text = textComboBox->currentText();
     QString path = QDir::cleanPath(directoryComboBox->currentText());
-//! [3]
+    //! [3]
 
     updateComboBox(fileComboBox);
     updateComboBox(textComboBox);
     updateComboBox(directoryComboBox);
 
-//! [4]
+    //! [4]
 
     currentDir = QDir(path);
     QStringList files;
@@ -175,9 +225,15 @@ void Window::find()
 
 void Window::findList()
 {
+    findButton->setEnabled(false);
+    cancelButton->setEnabled(true);
     QString path = QDir::cleanPath(directoryComboBox->currentText());
+    qDebug() << "Window::findList " << path;
+    //QMetaObject::invokeMethod(worker, "onFindWork", Q_ARG(const QString &, path));
+    emit findWork(path);
+    #if 1
+#else
     currentDir = QDir(path);
-    qDebug() << path;
     QFile file("data.txt");
     if(!file.open(QFile::ReadOnly | QIODevice::Text)){
         qDebug() << "file open failed!";
@@ -186,9 +242,13 @@ void Window::findList()
     int total = 0;
     QTextStream in(&file);
     while(!in.atEnd()){
+        if(m_cancel){
+            m_cancel = false;
+            break;
+        }
+
         //读取一行
         QString line = in.readLine();
-        qDebug() << line;
         QStringList lineGroup = line.split("\t");
         //qDebug() << lineGroup[0] << lineGroup[6];
 
@@ -223,7 +283,7 @@ void Window::findList()
             QString newFileDirName = newDirName + QLatin1Char('/') + fileInfo.fileName();
             QFileInfo NewFileInfo(newFileDirName);
             if(temp->exists(newFileDirName)){
-               temp->remove(newFileDirName);
+                temp->remove(newFileDirName);
             }
             if(!QFile::copy(f, newFileDirName)){
                 qDebug() << "copy error" << f << " to " << newFileDirName;
@@ -239,6 +299,10 @@ void Window::findList()
     if(total==0){
         filesFoundLabel->setText(QString("找不到文件"));
     }
+
+    findButton->setEnabled(true);
+    cancelButton->setEnabled(false);
+#endif
 }
 
 //! [4]
@@ -256,7 +320,7 @@ QStringList Window::findFiles(const QStringList &files, const QString &text)
     progressDialog.setRange(0, files.size());
     progressDialog.setWindowTitle(tr("Find Files"));
 
-//! [5] //! [6]
+    //! [5] //! [6]
     QMimeDatabase mimeDatabase;
     QStringList foundFiles;
 
@@ -264,12 +328,12 @@ QStringList Window::findFiles(const QStringList &files, const QString &text)
         progressDialog.setValue(i);
         progressDialog.setLabelText(tr("Searching file number %1 of %n...", 0, files.size()).arg(i));
         QCoreApplication::processEvents();
-//! [6]
+        //! [6]
 
         if (progressDialog.wasCanceled())
             break;
 
-//! [7]
+        //! [7]
         const QString fileName = files.at(i);
         const QMimeType mimeType = mimeDatabase.mimeTypeForFile(fileName);
         if (mimeType.isValid() && !mimeType.inherits(QStringLiteral("text/plain"))) {
@@ -308,7 +372,7 @@ void Window::showFiles(const QStringList &files)
         fileNameItem->setToolTip(toolTip);
         fileNameItem->setFlags(fileNameItem->flags() ^ Qt::ItemIsEditable);
         QTableWidgetItem *sizeItem = new QTableWidgetItem(tr("%1 KB")
-                                             .arg(int((size + 1023) / 1024)));
+                                                          .arg(int((size + 1023) / 1024)));
         sizeItem->setData(absoluteFileNameRole, QVariant(fileName));
         sizeItem->setToolTip(toolTip);
         sizeItem->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -347,13 +411,13 @@ void Window::createFilesTable()
     filesTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     filesTable->verticalHeader()->hide();
     filesTable->setShowGrid(false);
-//! [15]
+    //! [15]
     filesTable->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(filesTable, &QTableWidget::customContextMenuRequested,
             this, &Window::contextMenu);
     connect(filesTable, &QTableWidget::cellActivated,
             this, &Window::openFileOfItem);
-//! [15]
+    //! [15]
 }
 //! [11]
 
