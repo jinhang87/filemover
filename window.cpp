@@ -52,6 +52,7 @@
 #include <QDebug>
 #include <QFile>
 #include "window.h"
+#include <QMessageBox>
 
 //! [17]
 enum { absoluteFileNameRole = Qt::UserRole + 1 };
@@ -176,33 +177,68 @@ void Window::findList()
 {
     QString path = QDir::cleanPath(directoryComboBox->currentText());
     currentDir = QDir(path);
-
-    QFile file("data1.txt");
+    qDebug() << path;
+    QFile file("data.txt");
     if(!file.open(QFile::ReadOnly | QIODevice::Text)){
+        qDebug() << "file open failed!";
         return;
     }
+    int total = 0;
     QTextStream in(&file);
     while(!in.atEnd()){
+        //读取一行
         QString line = in.readLine();
         qDebug() << line;
         QStringList lineGroup = line.split("\t");
-        qDebug() << lineGroup[0] << lineGroup[6];
+        //qDebug() << lineGroup[0] << lineGroup[6];
 
-        //创建文件夹
-
-
-
-
-        if(1){
-            //QString fileName = QString(u8"*鲁*");
-            QString fileName = QString(u8"*%1*").arg(lineGroup[0]);
-            QStringList files;
-            findRecursion(path, fileName.isEmpty() ? QStringLiteral("*") : fileName, &files);
-            qDebug() << fileName << files;
+        //无车牌跳过
+        if(lineGroup[0] == QStringLiteral("无车牌")){
+            continue;
         }
 
+        //查找文件
+        //QString fileName = QString(u8"*鲁*");
+        QString fileName = QString(u8"*%1*").arg(lineGroup[0]);
+        QStringList files;
+        findRecursion(path, fileName.isEmpty() ? QStringLiteral("*") : fileName, &files);
+        if(files.size() == 0){
+            //qDebug() << "找不到车牌";
+            continue;
+        }
+        fileComboBox->lineEdit()->setText(lineGroup[0]);
+
+        //创建文件夹
+        QString newDirName = QDir::cleanPath(path + QLatin1String("/../") + lineGroup[6]);
+        qDebug() << newDirName;
+        QDir *temp = new QDir;
+        bool exist = temp->exists(newDirName);
+        if(!exist){
+            temp->mkdir(newDirName);
+        }
+
+        //拷贝文件
+        for(auto f : files){
+            QFileInfo fileInfo(f);
+            QString newFileDirName = newDirName + QLatin1Char('/') + fileInfo.fileName();
+            QFileInfo NewFileInfo(newFileDirName);
+            if(temp->exists(newFileDirName)){
+               temp->remove(newFileDirName);
+            }
+            if(!QFile::copy(f, newFileDirName)){
+                qDebug() << "copy error" << f << " to " << newFileDirName;
+            }
+        }
+        total += files.size();
+        filesFoundLabel->setText(QString("复制 %1 个文件!").arg(total));
+        filesFoundLabel->setWordWrap(true);
+        delete temp;
     }
     file.close();
+
+    if(total==0){
+        filesFoundLabel->setText(QString("找不到文件"));
+    }
 }
 
 //! [4]
