@@ -1,4 +1,4 @@
-#include "findworker.h"
+﻿#include "findworker.h"
 #include <QDebug>
 #include <QFile>
 #include <QDir>
@@ -100,6 +100,8 @@ void FindWorker::onFindWork(const QString &path)
         filesFoundLabel->setText(QString("找不到文件"));
 #endif
         emit totalNone();
+    }else{
+        emit totalOver();
     }
 }
 

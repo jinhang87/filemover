@@ -128,20 +128,25 @@ Window::Window(QWidget *parent)
     connect(this, &Window::findWork, worker, &FindWorker::onFindWork);
     connect(this, &Window::cancel, worker, &FindWorker::cancel);
     connect(worker, &FindWorker::totalChanged, this , [=](int total){
-        filesFoundLabel->setText(QString("复制 %1 个文件!").arg(total));
+        filesFoundLabel->setText(QString("already copy %1 files! ").arg(total));
         filesFoundLabel->setWordWrap(true);
+    });
+    connect(worker, &FindWorker::totalOver, this , [=](){
         findButton->setEnabled(true);
         cancelButton->setEnabled(false);
     });
     connect(worker, &FindWorker::totalNone, this, [=](){
-        filesFoundLabel->setText(QString("找不到目标文件"));
+        filesFoundLabel->setText(QString("can not find source file"));
+        filesFoundLabel->setWordWrap(true);
         findButton->setEnabled(true);
         cancelButton->setEnabled(false);
+        qDebug() << "can not find source file!";
     });
     connect(worker, &FindWorker::fileNotFind, this, [=](){
-        filesFoundLabel->setText(QString("找不到配置文件"));
+        filesFoundLabel->setText(QString("can not find configuration file"));
         findButton->setEnabled(true);
         cancelButton->setEnabled(false);
+        qDebug() << "can not find configuration file!";
     });
     connect(worker, &FindWorker::plateChanged, this , [=](const QString &text){
         fileComboBox->lineEdit()->setText(text);
@@ -457,3 +462,6 @@ void Window::contextMenu(const QPoint &pos)
 
 
 //! [16]
+
+
+

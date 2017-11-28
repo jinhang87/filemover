@@ -13,6 +13,7 @@ signals:
     void plateChanged(const QString &text);
     void totalChanged(int total);
     void totalNone();
+    void totalOver();
     void fileNotFind();
 
 
